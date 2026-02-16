@@ -1,0 +1,100 @@
+/* Custom Scrollbar for Webkit browsers */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1f2937;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+}
+
+/* Chat bubble styling tweaks */
+.prose {
+    max-width: none;
+}
+
+.prose pre {
+    background-color: #1e293b;
+    /* Slightly lighter than pure black */
+    border-radius: 0.5rem;
+    padding: 1rem;
+    padding-top: 2.5rem;
+    /* Space for copy button */
+    overflow-x: auto;
+    border: 1px solid #374151;
+    margin: 0;
+    /* Reset margin since wrapper handles flow */
+}
+
+.prose code {
+    font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+    color: #e2e8f0;
+    font-size: 0.9em;
+}
+
+/* Inline code style */
+.prose :not(pre)>code {
+    background-color: #374151;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    color: #fca5a5;
+    /* Light red/pink for contrast */
+}
+
+/* Copy Button Styling */
+.copy-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background-color: #374151;
+    color: #9ca3af;
+    border: none;
+    border-radius: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s, background-color 0.2s;
+}
+
+.copy-btn:hover {
+    opacity: 1;
+    background-color: #4b5563;
+    color: #ffffff;
+}
+
+/* Loading animation dots */
+.typing-dots::after {
+    content: ' .';
+    animation: dots 1.5s steps(5, end) infinite;
+}
+
+@keyframes dots {
+
+    0%,
+    20% {
+        content: ' .';
+    }
+
+    40% {
+        content: ' ..';
+    }
+
+    60% {
+        content: ' ...';
+    }
+
+    80%,
+    100% {
+        content: '';
+    }
+}

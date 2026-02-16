@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local AI Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+</head>
+
+<body class="bg-gray-900 text-white h-screen flex overflow-hidden">
+
+    <!-- Sidebar -->
+    <div class="w-64 bg-gray-800 flex-shrink-0 flex flex-col border-r border-gray-700">
+        <div class="p-4">
+            <button onclick="createNewChat()"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-200">
+                + New Chat
+            </button>
+        </div>
+        <div id="history-list" class="flex-1 overflow-y-auto px-2 space-y-2">
+            <!-- History items will be populated here -->
+        </div>
+        <div class="p-4 border-t border-gray-700">
+            <div class="flex items-center space-x-2">
+                <div class="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center font-bold">U</div>
+                <div>User</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Chat Area -->
+    <div class="flex-1 flex flex-col h-full relative">
+        <!-- Header -->
+        <div class="h-14 bg-gray-900 border-b border-gray-700 flex items-center px-6 justify-between">
+            <h1 class="font-bold text-lg">Local AI Studio</h1>
+        </div>
+
+        <!-- Messages Container -->
+        <div id="chat-container" class="flex-1 overflow-y-auto p-6 space-y-6">
+            <!-- Messages will appear here -->
+            <div class="flex justify-center items-center h-full text-gray-500">
+                <p>Start a new conversation or select one from history.</p>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 bg-gray-900 border-t border-gray-700">
+            <div class="max-w-4xl mx-auto relative flex flex-col space-y-2">
+                <!-- Toolbar -->
+                <div class="flex items-center space-x-4 mb-1 px-1">
+                    <div class="flex items-center space-x-2">
+                        <label for="mode-select" class="text-xs text-gray-400">Mode:</label>
+                        <select id="mode-select" onchange="onModeChange()"
+                            class="bg-gray-800 text-white text-xs rounded border border-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 px-2 py-1">
+                            <option value="text">Text</option>
+                            <option value="image">Image</option>
+                            <option value="video">Video</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <label for="model-select" class="text-xs text-gray-400">Model:</label>
+                        <select id="model-select"
+                            class="bg-gray-800 text-white text-xs rounded border border-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 px-2 py-1">
+                            <option value="default">Loading...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex items-center bg-gray-700 rounded-lg focus-within:ring-2 focus-within:ring-blue-500">
+                    <textarea id="user-input" rows="1"
+                        class="flex-1 bg-transparent text-white pl-4 pr-2 py-3 focus:outline-none resize-none overflow-hidden"
+                        placeholder="Send a message..."></textarea>
+                    <button onclick="sendMessage()"
+                        class="flex-shrink-0 mr-2 p-1.5 bg-blue-600 rounded-md hover:bg-blue-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        id="send-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                            stroke="currentColor" class="w-5 h-5">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="text-center text-xs text-gray-500 mt-2">
+                    AI can make mistakes. Consider checking important information.
+                </div>
+            </div>
+        </div>
+
+        <script src="/static/script.js?v=2"></script>
+</body>
+
+</html>

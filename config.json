@@ -1,0 +1,24 @@
+{
+    "text_models": [
+        {
+            "name": "Gemma 3 1B Q8",
+            "path": "models/gemma-3-1b-it-GGUF/gemma-3-1b-it-Q8_0.gguf",
+            "n_ctx": 2048,
+            "n_gpu_layers": -1
+        },
+        {
+            "name": "Gemma 3 1B IQ4_XS",
+            "path": "models/gemma-3-1b-it-GGUF/gemma-3-1b-it-IQ4_XS.gguf",
+            "n_ctx": 2048,
+            "n_gpu_layers": -1
+        }
+    ],
+    "image_models": [
+        {
+            "name": "Tiny SD",
+            "path": "models/tiny-sd",
+            "device": "auto"
+        }
+    ],
+    "video_models": []
+}
