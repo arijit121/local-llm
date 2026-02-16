@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 # Load Configuration
 import json
@@ -202,6 +202,18 @@ class ChatRequest(BaseModel):
 class ConversationCreate(BaseModel):
     title: Optional[str] = "New Chat"
 
+# OpenAI Compatible Models
+class OpenAIMessage(BaseModel):
+    role: str
+    content: str
+
+class OpenAIChatCompletionRequest(BaseModel):
+    model: str
+    messages: List[OpenAIMessage]
+    stream: Optional[bool] = False
+    max_tokens: Optional[int] = None
+    temperature: Optional[float] = 0.7
+
 # Routes
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -273,6 +285,59 @@ async def get_models(type: str = "text"):
     else:
         models = config.get("text_models", [])
     return [m["name"] for m in models]
+
+# OpenAI Compatible Routes
+@app.get("/v1/models")
+async def list_models():
+    text_models = config.get("text_models", [])
+    
+    data = []
+    for m in text_models:
+        data.append({
+            "id": m["name"],
+            "object": "model",
+            "created": int(datetime.now().timestamp()),
+            "owned_by": "local"
+        })
+    return {"object": "list", "data": data}
+
+@app.post("/v1/chat/completions")
+async def chat_completions(request: OpenAIChatCompletionRequest):
+    global llm
+    
+    target_model = request.model
+    # Use existing loader logic to ensure correct model is loaded
+    llm_instance = load_text_model(target_model)
+    
+    if not llm_instance:
+        # Fallback to default if specific model not found, or error?
+        # Continue.dev might send "gpt-4" or similar aliases. 
+        # For now, let's try to load what was requested, or default if 'default' or matches existing.
+        # If load_text_model returns None, we error.
+        raise HTTPException(status_code=400, detail=f"Model '{target_model}' not found or failed to load.")
+
+    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+
+    if request.stream:
+        async def event_generator():
+            stream = llm_instance.create_chat_completion(
+                messages=messages,
+                stream=True,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature
+            )
+            for chunk in stream:
+                yield f"data: {json.dumps(chunk)}\\n\\n"
+            yield "data: [DONE]\\n\\n"
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+    else:
+        return llm_instance.create_chat_completion(
+            messages=messages,
+            stream=False,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature
+        )
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
