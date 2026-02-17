@@ -327,8 +327,8 @@ async def chat_completions(request: OpenAIChatCompletionRequest):
                 temperature=request.temperature
             )
             for chunk in stream:
-                yield f"data: {json.dumps(chunk)}\\n\\n"
-            yield "data: [DONE]\\n\\n"
+                yield f"data: {json.dumps(chunk)}\n\n"
+            yield "data: [DONE]\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
     else:
