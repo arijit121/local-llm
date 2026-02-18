@@ -41,37 +41,195 @@ from config_loader import config
 
 
 # ===========================================================================
-# SECTION 1: TEXT MODEL (Llama / LLM)
+# SECTION 1: TEXT MODEL (Llama / LLM  OR  HuggingFace Transformers)
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
 # Global variables to keep the loaded text model in memory
 # ---------------------------------------------------------------------------
-llm = None                    # The loaded Llama model object (None = not loaded)
+llm = None                      # The loaded model object (None = not loaded)
 current_text_model_name = None  # Name of the currently loaded model
+
+
+# ---------------------------------------------------------------------------
+# HuggingFace Adapter
+# ---------------------------------------------------------------------------
+# This adapter wraps a HuggingFace transformers pipeline so it exposes
+# the SAME interface as llama.cpp's Llama object.
+# That means chat_routes.py can call model.create_chat_completion(messages=...)
+# on BOTH llama.cpp models AND HuggingFace models without any changes.
+
+class HuggingFaceModelAdapter:
+    """
+    Wraps a HuggingFace text-generation pipeline to look like a llama.cpp Llama object.
+
+    WHY?
+        llama.cpp models are called like:
+            llm.create_chat_completion(messages=[...])
+        HuggingFace pipelines work differently, so we wrap them here
+        to keep the rest of the app unchanged.
+    """
+
+    def __init__(self, pipeline, tokenizer):
+        self.pipeline = pipeline
+        self.tokenizer = tokenizer
+
+    def create_chat_completion(
+        self,
+        messages: list,
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+        stream: bool = False,
+        **kwargs
+    ) -> dict:
+        """
+        Generate a chat response — same signature as llama.cpp.
+
+        Args:
+            messages    : List of {"role": ..., "content": ...} dicts
+            max_tokens  : Maximum new tokens to generate
+            temperature : Sampling temperature (0 = deterministic, 1 = creative)
+            stream      : Ignored for HuggingFace models (not supported here)
+
+        Returns:
+            dict in OpenAI-compatible format:
+            {
+                "choices": [
+                    {"message": {"content": "..."}}
+                ]
+            }
+        """
+        # Apply the model's chat template to format messages correctly
+        # (each model has its own special format for system/user/assistant turns)
+        try:
+            prompt = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
+        except Exception:
+            # Fallback: simple concatenation if chat template fails
+            prompt = "\n".join(
+                f"{m['role'].upper()}: {m['content']}" for m in messages
+            ) + "\nASSISTANT:"
+
+        # Run the pipeline
+        outputs = self.pipeline(
+            prompt,
+            max_new_tokens=max_tokens if max_tokens else 512,
+            temperature=temperature,
+            do_sample=temperature > 0,
+            return_full_text=False,   # Only return the NEW tokens, not the prompt
+            pad_token_id=self.tokenizer.eos_token_id,
+        )
+
+        generated_text = outputs[0]["generated_text"].strip()
+
+        # Return in the same format as llama.cpp
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": generated_text
+                    }
+                }
+            ]
+        }
+
+
+def _is_huggingface_model(path: str) -> bool:
+    """
+    Returns True if the path is a HuggingFace model folder
+    (detected by the presence of a config.json inside it).
+    Returns False if it's a .gguf file path.
+    """
+    return os.path.isdir(path) and os.path.exists(os.path.join(path, "config.json"))
+
+
+def _load_huggingface_model(model_config: dict) -> "HuggingFaceModelAdapter | None":
+    """
+    Load a HuggingFace model from a local folder using the transformers library.
+
+    Args:
+        model_config : Dict from config.json with 'path', 'n_ctx', etc.
+
+    Returns:
+        HuggingFaceModelAdapter on success, None on failure.
+    """
+    try:
+        import torch
+        from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+
+        path = model_config["path"]
+        n_ctx = model_config.get("n_ctx", 4096)
+        n_gpu_layers = model_config.get("n_gpu_layers", 0)
+
+        # Decide device: use CUDA if n_gpu_layers != 0 and CUDA is available
+        if n_gpu_layers != 0 and torch.cuda.is_available():
+            device = "cuda"
+            dtype = torch.bfloat16   # Efficient on modern GPUs
+        else:
+            device = "cpu"
+            dtype = torch.float32
+
+        print(f"Loading HuggingFace model: {model_config['name']} "
+              f"from {path} ({device.upper()})")
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            path,
+            local_files_only=True,
+            trust_remote_code=True
+        )
+
+        model = AutoModelForCausalLM.from_pretrained(
+            path,
+            torch_dtype=dtype,
+            local_files_only=True,
+            trust_remote_code=True,
+            device_map=device if device == "cuda" else None,
+        )
+
+        if device == "cpu":
+            model = model.to("cpu")
+
+        hf_pipeline = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            max_new_tokens=n_ctx,
+            device=0 if device == "cuda" else -1,  # 0 = first GPU, -1 = CPU
+        )
+
+        print(f"✅ HuggingFace model loaded: {model_config['name']}")
+        return HuggingFaceModelAdapter(hf_pipeline, tokenizer)
+
+    except Exception as e:
+        print(f"Error loading HuggingFace model {model_config['name']}: {e}")
+        return None
 
 
 def load_text_model(model_name: str = None):
     """
-    Load a text generation model (LLM) using llama.cpp.
+    Load a text generation model — either llama.cpp (GGUF) or HuggingFace.
+
+    AUTO-DETECTION:
+        - If the model path is a .gguf FILE  → use llama.cpp (fast, quantized)
+        - If the model path is a FOLDER with config.json → use HuggingFace transformers
 
     This function:
     1. Looks up the model by name in config.json
     2. If no name given, uses the FIRST model in the list
     3. Skips loading if the same model is already loaded (saves time!)
-    4. Loads the .gguf model file into memory
+    4. Routes to the correct backend based on the model format
 
     Args:
         model_name (str, optional): Name of the model to load.
                                      If None, loads the first available model.
 
     Returns:
-        Llama object if successful, None if loading fails.
-
-    Example:
-        model = load_text_model("MyModel")
-        if model:
-            response = model.create_chat_completion(messages=[...])
+        Model adapter object if successful, None if loading fails.
+        The returned object always has a .create_chat_completion() method.
     """
     global llm, current_text_model_name
 
@@ -94,42 +252,57 @@ def load_text_model(model_name: str = None):
         selected_model = models[0]
 
     # Step 4: Skip if this model is already loaded (optimization!)
-    # This avoids wasting time reloading the same model on every request
     if llm is not None and current_text_model_name == selected_model["name"]:
         return llm
 
-    # Step 5: Actually load the model from disk
+    # Step 5: Route to the correct loader based on model format
+    path = selected_model["path"]
+
+    if _is_huggingface_model(path):
+        # ── HuggingFace model (folder with config.json) ──
+        llm = _load_huggingface_model(selected_model)
+    else:
+        # ── llama.cpp model (.gguf file) ──
+        llm = _load_gguf_model(selected_model)
+
+    if llm is not None:
+        current_text_model_name = selected_model["name"]
+
+    return llm
+
+
+def _load_gguf_model(model_config: dict):
+    """
+    Load a GGUF model using llama.cpp.
+
+    Args:
+        model_config : Dict from config.json with 'path', 'n_ctx', 'n_gpu_layers'.
+
+    Returns:
+        Llama object on success, None on failure.
+    """
     try:
-        # Lazy import: only load llama_cpp when we actually need it
         from llama_cpp import Llama
 
-        path = selected_model["path"]
+        path = model_config["path"]
 
-        # Check if the model file exists
         if os.path.exists(path):
-            print(f"Loading Llama model: {selected_model['name']} from {path}")
-
-            # Create the Llama model object
-            # - model_path : where the .gguf file is located
-            # - n_ctx      : context window size (how much text it can process)
-            # - n_gpu_layers: number of model layers to offload to GPU (0 = CPU)
-            # - verbose    : False = don't print extra debug info
-            llm = Llama(
+            print(f"Loading Llama model: {model_config['name']} from {path}")
+            loaded = Llama(
                 model_path=path,
-                n_ctx=selected_model.get("n_ctx", 2048),
-                n_gpu_layers=selected_model.get("n_gpu_layers", 0),
+                n_ctx=model_config.get("n_ctx", 2048),
+                n_gpu_layers=model_config.get("n_gpu_layers", 0),
                 verbose=False
             )
-            current_text_model_name = selected_model["name"]
-            return llm
+            return loaded
         else:
             print(f"Error: Model path not found: {path}")
             return None
 
     except Exception as e:
-        # If anything goes wrong, print the error and return None
-        print(f"Error loading model {selected_model['name']}: {e}")
+        print(f"Error loading model {model_config['name']}: {e}")
         return None
+
 
 
 # ===========================================================================
