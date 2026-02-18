@@ -22,6 +22,12 @@
             "name": "BitNet-b1.58-2B-4T",
             "path": "models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf",
             "n_ctx": 2048
+        },
+        {
+            "name": "SmolLM3-3B",
+            "path": "models/SmolLM3-3B",
+            "n_ctx": 4096,
+            "n_gpu_layers": -1
         }
     ],
     "image_models": [

@@ -8,7 +8,6 @@ PURPOSE:
     We use "mocks" to simulate AI models so tests run fast without
     needing actual model files.
 
-HOW TO RUN:
     python test_app.py
 
 WHAT IS MOCKING?
@@ -16,14 +15,21 @@ WHAT IS MOCKING?
     so we can test our code without needing the real dependencies.
     For example, instead of loading a 4GB AI model, we create a fake
     one that returns pre-defined answers.
+
+    We also mock 'web_search' to avoid real network calls during tests.
 ===========================================================================
 """
+
+
 
 import os
 import sys
 import unittest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
+
+# Set testing environment variable BEFORE importing main
+os.environ["TESTING"] = "1"
 
 # Add current directory to sys.path to import our modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -106,43 +112,91 @@ class TestLocalAIStudio(unittest.TestCase):
         self.assertIsInstance(data, dict)
 
     def test_chat_text(self):
-        """Test sending a text message and getting a response."""
+        print("\n--- Running test_chat_text ---")
+        """Test sending a text message to the chat API."""
         mock_response = {'choices': [{'message': {'content': 'Hello from mocked Llama!'}}]}
 
-        # Patch the llm in models_loader (where it lives now)
-        with patch("models_loader.llm", mock_llm_instance):
-            mock_llm_instance.create_chat_completion.return_value = mock_response
+        # Patch load_text_model where it's used (in chat_routes)
+        with patch("routes.chat_routes.load_text_model") as mock_load:
+            # Configure the mock LLM
+            mock_llm = MagicMock()
+            mock_llm.create_chat_completion.return_value = mock_response
+            mock_load.return_value = mock_llm
 
             conv_id = self.test_create_conversation()
             response = client.post("/api/chat", json={
                 "conversation_id": conv_id,
-                "message": "Hello AI"
+                "message": "Hello AI",
+                "model": "gemma-2b"
             })
+            
             self.assertEqual(response.status_code, 200)
             data = response.json()
             self.assertEqual(data["role"], "assistant")
             self.assertEqual(data["content"], 'Hello from mocked Llama!')
             self.assertEqual(data["type"], "text")
 
-    @patch("models_loader.pipe")
-    def test_chat_image(self, mock_pipe):
+    def test_chat_with_web_search(self):
+        print("\n--- Running test_chat_with_web_search ---")
+        """Test sending a message with web search enabled."""
+        mock_response = {'choices': [{'message': {'content': 'Here is the answer based on web results.'}}]}
+        
+        # Mock web search results
+        mock_web_results = [
+            {"title": "Test Result", "href": "http://example.com", "body": "This is a test snippet."}
+        ]
+
+        # Patch:
+        # 1. load_text_model (in chat_routes) -> returns our mock LLM
+        # 2. search_web (in chat_routes) -> returns our mock results
+        
+        with patch("routes.chat_routes.load_text_model") as mock_load:
+            # Configure the mock LLM
+            mock_llm = MagicMock()
+            mock_llm.create_chat_completion.return_value = mock_response
+            mock_load.return_value = mock_llm
+
+            with patch("routes.chat_routes.search_web", return_value=mock_web_results) as mock_search:
+                
+                conv_id = self.test_create_conversation()
+                response = client.post("/api/chat", json={
+                    "conversation_id": conv_id,
+                    "message": "What is the weather?",
+                    "web_search": True
+                })
+                
+                # Check that web search was called
+                mock_search.assert_called_once()
+                self.assertEqual(mock_search.call_args[0][0], "What is the weather?")
+
+                self.assertEqual(response.status_code, 200)
+                data = response.json()
+                self.assertEqual(data["content"], 'Here is the answer based on web results.')
+
+
+    def test_chat_image(self):
+        print("\n--- Running test_chat_image ---")
         """Test generating an image via chat."""
         mock_image = MagicMock()
         mock_image.save = MagicMock()
-
+        
+        # We need the pipe to return an object with an 'images' attribute
         mock_pipe_instance = MagicMock()
         mock_pipe_instance.return_value.images = [mock_image]
 
-        with patch("models_loader.pipe", mock_pipe_instance):
-            conv_id = self.test_create_conversation()
-            response = client.post("/api/chat", json={
-                "conversation_id": conv_id,
-                "message": "/image a cat"
-            })
+        # Patch load_image_model where it's used (in chat_routes)
+        with patch("routes.chat_routes.load_image_model") as mock_load:
+            mock_load.return_value = mock_pipe_instance
 
-            if response.status_code == 500:
-                print("Skipping image test as pipe might not be loaded")
-            else:
+            # Also patch models_loader.pipe because _generate_image_response uses it
+            with patch("models_loader.pipe", mock_pipe_instance):
+                conv_id = self.test_create_conversation()
+                response = client.post("/api/chat", json={
+                    "conversation_id": conv_id,
+                    "message": "/image a cat",
+                    "mode": "image"
+                })
+
                 self.assertEqual(response.status_code, 200)
                 data = response.json()
                 self.assertEqual(data["type"], "image")

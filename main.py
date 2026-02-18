@@ -55,6 +55,9 @@ WHAT IS Uvicorn?
 # ═══════════════════════════════════════════════════════════════════════════
 # STEP 1: Import FastAPI framework
 # ═══════════════════════════════════════════════════════════════════════════
+import asyncio                                   # For running blocking tasks in background
+from contextlib import asynccontextmanager       # For the lifespan handler
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles  # For serving CSS, JS, images
 
@@ -77,15 +80,54 @@ from routes.conversation_routes import router as conversation_router  # Conversa
 from routes.model_routes import router as model_router              # Model listing
 from routes.chat_routes import router as chat_router                # Chat & AI generation
 
-# ═══════════════════════════════════════════════════════════════════════════
-# STEP 3: Create the FastAPI application
-# ═══════════════════════════════════════════════════════════════════════════
-# This creates the main "app" object that handles all web requests.
-# Everything else (routes, static files, etc.) gets attached to this app.
-app = FastAPI()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# STEP 4: Mount static file directories
+# STEP 3: Define lifespan handler (background model loading)
+# ═══════════════════════════════════════════════════════════════════════════
+# Previously, load_text_model() and load_image_model() were called at module
+# level, which BLOCKED the server from starting until all models were loaded.
+# Now, we load them in BACKGROUND THREADS so the server starts immediately
+# and the web page is accessible right away. Models will be ready once
+# loading finishes in the background.
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan handler — runs background tasks when the app starts up.
+
+    WHAT CHANGED:
+        Before: Models loaded synchronously → server blocked → blank page
+        After:  Models load in background threads → server starts instantly
+
+    asyncio.to_thread() runs the blocking model-loading functions in a
+    separate thread so they don't block the main async event loop.
+    """
+    import os
+    if os.getenv("TESTING") == "1":
+        print("🧪 Test mode: Skipping background model loading.")
+        yield
+        return
+
+    # Fire-and-forget: start model loading in background threads
+    asyncio.create_task(asyncio.to_thread(load_text_model))
+    asyncio.create_task(asyncio.to_thread(load_image_model))
+    print("🚀 Server started! Models are loading in the background...")
+
+    yield  # Server is running and accepting requests
+
+    # Cleanup code (if needed) would go here after yield
+    print("Server shutting down...")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STEP 4: Create the FastAPI application
+# ═══════════════════════════════════════════════════════════════════════════
+# This creates the main "app" object that handles all web requests.
+# The lifespan handler ensures models load in the background on startup.
+app = FastAPI(lifespan=lifespan)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STEP 5: Mount static file directories
 # ═══════════════════════════════════════════════════════════════════════════
 # "Mounting" means telling FastAPI to serve files from a specific folder
 # when a certain URL is requested.
@@ -100,7 +142,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/outputs", StaticFiles(directory="data/outputs"), name="outputs")
 
 # ═══════════════════════════════════════════════════════════════════════════
-# STEP 5: Include all API routes from our route modules
+# STEP 6: Include all API routes from our route modules
 # ═══════════════════════════════════════════════════════════════════════════
 # Each router handles a different part of the API:
 #   - page_router         → serves the HTML chat page
@@ -111,14 +153,6 @@ app.include_router(page_router)
 app.include_router(conversation_router)
 app.include_router(model_router)
 app.include_router(chat_router)
-
-# ═══════════════════════════════════════════════════════════════════════════
-# STEP 6: Load AI models on startup
-# ═══════════════════════════════════════════════════════════════════════════
-# Load the default text and image models so they're ready when the
-# first user request comes in. This happens ONCE when the app starts.
-load_text_model()    # Load the first/default text model
-load_image_model()   # Load the first/default image model
 
 # ═══════════════════════════════════════════════════════════════════════════
 # STEP 7: Run the server (only when running this file directly)

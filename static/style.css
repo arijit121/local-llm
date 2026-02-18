@@ -98,3 +98,15 @@
         content: '';
     }
 }
+
+/* Web Search Toggle Button */
+.web-search-btn {
+    cursor: pointer;
+    user-select: none;
+}
+
+.web-search-active {
+    background-color: rgba(30, 58, 138, 0.3);
+    /* equivalent to bg-blue-900/30 */
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+}

@@ -68,6 +68,7 @@ class ChatRequest(BaseModel):
     message: str                  # Required — no default value
     model: str = "default"        # Optional — defaults to "default"
     mode: str = "text"            # Optional — defaults to "text"
+    web_search: bool = False      # Optional — if True, search the web first
 
 
 class ConversationCreate(BaseModel):

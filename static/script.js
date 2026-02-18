@@ -1,12 +1,28 @@
 let currentConversationId = null;
+let webSearchEnabled = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     loadConversations();
     fetchModels();
 
-    // Check if there's a last conversation? For now, start fresh or load first.
-    // Actually, createNewChat() is better default.
+    // If the URL is /chat/{id}, auto-load that conversation
+    const match = window.location.pathname.match(/^\/chat\/(.+)$/);
+    if (match) {
+        loadChat(match[1]);
+    }
 });
+
+// Handle browser back/forward buttons
+window.onpopstate = (e) => {
+    if (e.state && e.state.chatId) {
+        loadChat(e.state.chatId, false); // false = don't push state again
+    } else {
+        // Navigated back to root — clear the chat
+        currentConversationId = null;
+        document.getElementById('chat-container').innerHTML =
+            '<div class="flex justify-center items-center h-full text-gray-500"><p>Start a new conversation or select one from history.</p></div>';
+    }
+};
 
 
 async function fetchModels(type = 'text') {
@@ -37,6 +53,18 @@ async function fetchModels(type = 'text') {
 function onModeChange() {
     const mode = document.getElementById('mode-select').value;
     fetchModels(mode);
+}
+
+function toggleWebSearch() {
+    webSearchEnabled = !webSearchEnabled;
+    const btn = document.getElementById('web-search-toggle');
+    if (webSearchEnabled) {
+        btn.classList.remove('text-gray-400', 'border-gray-700', 'bg-gray-800');
+        btn.classList.add('text-blue-400', 'border-blue-500', 'web-search-active');
+    } else {
+        btn.classList.remove('text-blue-400', 'border-blue-500', 'web-search-active');
+        btn.classList.add('text-gray-400', 'border-gray-700', 'bg-gray-800');
+    }
 }
 
 async function loadConversations() {
@@ -99,12 +127,19 @@ async function createNewChat() {
     document.getElementById('chat-container').innerHTML = ''; // Clear chat
     loadConversations(); // Refresh list
     appendMessage('system', 'Started a new conversation.');
+    // Update the URL to reflect the new chat
+    history.pushState({ chatId: data.id }, '', `/chat/${data.id}`);
 }
 
-async function loadChat(id) {
+async function loadChat(id, pushState = true) {
     currentConversationId = id;
     const response = await fetch(`/api/conversations/${id}`);
     const data = await response.json();
+
+    // Update the browser URL (unless called from popstate)
+    if (pushState) {
+        history.pushState({ chatId: id }, '', `/chat/${id}`);
+    }
 
     const container = document.getElementById('chat-container');
     container.innerHTML = '';
@@ -225,7 +260,8 @@ async function sendMessage() {
                 conversation_id: currentConversationId,
                 message: message,
                 model: selectedModel,
-                mode: selectedMode
+                mode: selectedMode,
+                web_search: webSearchEnabled
             })
         });
 

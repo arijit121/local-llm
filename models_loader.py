@@ -30,13 +30,11 @@ USED BY:
 """
 
 import os     # For checking if model files/folders exist
-import torch  # PyTorch — the deep learning framework used by Stable Diffusion
 
-# Import the Llama model class from llama-cpp-python
-from llama_cpp import Llama
-
-# Import the Stable Diffusion pipeline from Hugging Face's diffusers library
-from diffusers import StableDiffusionPipeline
+# NOTE: Heavy imports (torch, llama_cpp, diffusers) are NOT imported here!
+# They are imported LAZILY inside the functions that need them.
+# This is because importing these libraries can take MINUTES, and we don't
+# want to block the server from starting while they load.
 
 # Import our config (the settings we loaded from config.json)
 from config_loader import config
@@ -102,6 +100,9 @@ def load_text_model(model_name: str = None):
 
     # Step 5: Actually load the model from disk
     try:
+        # Lazy import: only load llama_cpp when we actually need it
+        from llama_cpp import Llama
+
         path = selected_model["path"]
 
         # Check if the model file exists
@@ -191,6 +192,10 @@ def load_image_model(model_name: str = None):
 
     # Step 5: Load the model
     try:
+        # Lazy imports: only load torch and diffusers when we actually need them
+        import torch
+        from diffusers import StableDiffusionPipeline
+
         image_model_path = selected_model["path"]
         device_config = selected_model.get("device", "auto")
 

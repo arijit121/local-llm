@@ -46,4 +46,18 @@ async def read_root(request: Request):
     The 'request' parameter is required by Jinja2Templates —
     it contains info about the incoming HTTP request.
     """
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
+
+
+@router.get("/chat/{chat_id}")
+async def read_chat(request: Request, chat_id: str):
+    """
+    Serve the chat page for a specific conversation.
+
+    When someone visits http://localhost:8000/chat/abc-123 (directly
+    or after a page refresh), this serves the same index.html.
+    The frontend JavaScript then reads the URL and auto-loads
+    the correct conversation.
+    """
+    return templates.TemplateResponse(request, "index.html")
+

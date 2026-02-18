@@ -43,6 +43,7 @@ import models_loader  # Access to global model variables (llm, pipe)
 from database import OUTPUTS_DIR, get_db_connection
 from models_loader import load_text_model, load_image_model
 from schemas import ChatRequest, OpenAIChatCompletionRequest
+from web_search import search_web, format_search_context
 
 # ---------------------------------------------------------------------------
 # Create the router for chat routes
@@ -280,6 +281,11 @@ def _generate_text_response(request: ChatRequest, cursor) -> tuple:
     """
     Generate a text response using the Llama LLM.
 
+    If web_search is enabled, this function will:
+    1. Search the web for the user's question
+    2. Inject the search results as context into the prompt
+    3. Let the LLM generate an answer grounded in web data
+
     Args:
         request : The chat request containing the user's message
         cursor  : Database cursor to fetch conversation history
@@ -311,6 +317,30 @@ def _generate_text_response(request: ChatRequest, cursor) -> tuple:
     # Convert to the format llama.cpp expects:
     # [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello!"}]
     messages = [{"role": r[0], "content": r[1]} for r in history_rows]
+
+    # -----------------------------------------------------------------------
+    # WEB SEARCH: If enabled, search the web and inject results as context
+    # -----------------------------------------------------------------------
+    if request.web_search:
+        print(f"🌐 Web search enabled — searching for: {request.message}")
+        search_results = search_web(request.message, max_results=5)
+        search_context = format_search_context(search_results)
+
+        if search_context:
+            # Prepend a system message with web search results
+            # This gives the LLM real-time web information to use
+            web_system_message = {
+                "role": "system",
+                "content": (
+                    "The user has enabled web search. Below are relevant "
+                    "web search results for their latest question. Use this "
+                    "information to provide an accurate, up-to-date answer. "
+                    "Cite sources when possible.\n\n"
+                    f"{search_context}"
+                )
+            }
+            # Insert web context at the beginning of messages
+            messages.insert(0, web_system_message)
 
     try:
         # Ask the LLM to generate a response based on the conversation
