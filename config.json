@@ -25,7 +25,7 @@
         },
         {
             "name": "SmolLM3-Q4_K_M",
-            "path": "models/SmolLM3-3B-GGUF/ggml-org_SmolLM3-3B-GGUF_SmolLM3-Q4_K_M.gguf",
+            "path": "models/SmolLM3-3B-GGUF/SmolLM3-Q4_K_M.gguf",
             "n_ctx": 8192,
             "n_gpu_layers": -1,
             "chat_format": "chatml"
