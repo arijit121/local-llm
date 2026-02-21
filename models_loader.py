@@ -283,17 +283,47 @@ def _load_gguf_model(model_config: dict):
     """
     try:
         from llama_cpp import Llama
+        import jinja2
+        import re
+
+        # Monkey-patch Jinja2 Environment to strip HuggingFace's custom 'generation' tags.
+        # This prevents llama-cpp-python crashes when loading newer GGUF models.
+        if not hasattr(jinja2.Environment, '_patched_for_generation'):
+            _orig_from_string = jinja2.Environment.from_string
+            def _patched_from_string(self, source, globals=None, template_class=None):
+                if isinstance(source, str):
+                    source = re.sub(r'\{%-?\s*generation\s*-?%\}', '', source)
+                    source = re.sub(r'\{%-?\s*endgeneration\s*-?%\}', '', source)
+                return _orig_from_string(self, source, globals, template_class)
+            jinja2.Environment.from_string = _patched_from_string
+            jinja2.Environment._patched_for_generation = True
 
         path = model_config["path"]
+        chat_format = model_config.get("chat_format", None)
 
         if os.path.exists(path):
-            print(f"Loading Llama model: {model_config['name']} from {path}")
-            loaded = Llama(
-                model_path=path,
-                n_ctx=model_config.get("n_ctx", 2048),
-                n_gpu_layers=model_config.get("n_gpu_layers", 0),
-                verbose=False
-            )
+            print(f"Loading Llama model: {model_config['name']} from {path}"
+                  f"{' (chat_format=' + chat_format + ')' if chat_format else ''}")
+
+            # Build kwargs for the Llama constructor
+            llama_kwargs = {
+                "model_path": path,
+                "n_ctx": model_config.get("n_ctx", 2048),
+                "n_gpu_layers": model_config.get("n_gpu_layers", 0),
+                "verbose": False,
+            }
+
+            # If chat_format is specified, handle it. We explicitly pass a basic chat_handler template override
+            # to prevent it from auto-parsing the GGUF metadata template which contains unsupported Jinja tags.
+            if chat_format:
+                from llama_cpp.llama_chat_format import get_chat_completion_handler
+                llama_kwargs["chat_handler"] = get_chat_completion_handler(chat_format)
+            else:
+                # If no chat format explicitly passed, we pass a basic template string so the internal gguf load
+                # parser does not crash on the unsupported tag {% generation %} inside the metadata string.
+                llama_kwargs["chat_format"] = "chatml"
+
+            loaded = Llama(**llama_kwargs)
             return loaded
         else:
             print(f"Error: Model path not found: {path}")

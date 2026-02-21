@@ -405,8 +405,10 @@ def _auto_generate_title(cursor, conn, request, response_content, response_type)
             )
             generated_title = (
                 title_response['choices'][0]['message']['content']
-                .strip()        # Remove whitespace
-                .strip('"')     # Remove surrounding quotes
+                .strip()            # Remove whitespace
+                .strip('"')         # Remove surrounding quotes
+                .strip('<think>')   # Remove think tag quotes
+                .strip('</think>')  # Remove think tag quotes
             )
 
             if generated_title:
